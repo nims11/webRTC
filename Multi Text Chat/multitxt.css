@@ -19,3 +19,13 @@ body {
 	width: 100%;
 	border: 0;
 }
+#footer{
+	width: 100%;
+	text-align: center;
+	margin-top: 20px;
+}
+#nav{
+	width: 100%;
+	text-align: center;
+	margin-bottom: 10px;
+}

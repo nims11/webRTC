@@ -1,5 +1,6 @@
 var io = require('socket.io').listen(8080, {log: false});
 var rooms = {};
+var leaderRoom = {};
 io.sockets.on('connection', function (socket) {
   socket.on('ice', function (data) {
     if(rooms[data.roomId]){
@@ -28,6 +29,7 @@ io.sockets.on('connection', function (socket) {
   socket.on("createRoom", function(data) {
   	if(!rooms[data.roomId]){
   		rooms[data.roomId] = {leader: socket.id, slaves: []};
+      leaderRoom[socket.id] = data.roomId;
   		console.log('Room ' + data.roomId + ' created');
   	}
   });
@@ -37,5 +39,12 @@ io.sockets.on('connection', function (socket) {
   		console.log(data.nick + ' Joined room ' + data.roomId);
       io.sockets.socket(rooms[data.roomId].leader).emit('newSlave', {"socket": socket.id, nick: data.nick})
   	}
+  });
+  socket.on("disconnect", function(){
+    if(leaderRoom[socket.id]){
+      console.log('room '+leaderRoom[socket.id]+' deleted');
+      delete rooms[leaderRoom[socket.id]];
+      delete leaderRoom[socket.id];
+    }
   });
 });

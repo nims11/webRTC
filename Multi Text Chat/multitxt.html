@@ -8,30 +8,32 @@
 <script type='text/javascript'>
 /*
 Todo:
-    left message is quite late
     authorise
     keepAlive
     escape messages
     handle connection close
 
 */
-$(document).ready(function (){
-    $('#receive').on('scrollDown', function(){
-        console.log('Hi!');
-        $('#receive').scrollTop($('#receive')[0].scrollHeight);
-    });
+$(document).ready(function(){
+    $('#newRoom').attr('href', window.location.pathname);
 });
 </script>
 <link rel="stylesheet" href="multitxt.css">
 </head>
 <body>
 <div id='chatContainer'>
+    <div id='nav'><a id='newRoom'>New Room</a></div>
     <div id='receive'></div>
     <form name='sendForm' id='sendForm'>
         <div id='textContainer'>
             <input type='text' id='sendVal' />
         </div>
     </form>
+</div>
+<div id='footer'>
+<a href='https://github.com/nims11/webRTC/tree/master/Multi%20Text%20Chat'>
+    <img height='40' width='40' src='http://sisyphus-js.herokuapp.com/assets/github_icon-224de83a21f067b21c5d3ef55c3c0d61.png'/>
+</a>
 </div>
 <script type="text/javascript">
 var socket = io.connect('http://'+window.location.hostname+':8080');
@@ -66,7 +68,7 @@ function newPeer(sock, nick){
     }
 
     function handleDisconnect(){
-        if(pc.iceConnectionState == 'disconnected'){
+        if(pc.iceConnectionState == 'disconnected' || pc.iceConnectionState == 'closed'){
             if(isLeader){
                 var disconnectedNick = pc.nick;
                 delete peers[pc.socket];
@@ -101,6 +103,10 @@ function newPeer(sock, nick){
                 if(data.type == 'message'){
                     sendMessage('message', data.content, pc.nick);
                     addToChatBox(joinNickMsg(pc.nick, data.content));
+                }else if(data.type == 'info'){
+                    if(JSON.parse(data.content).data == 'leave'){
+                        pc.close();
+                    }
                 }
             }else{
                 if(data.type == 'message')
@@ -124,6 +130,7 @@ function formatMeta(msg){
 }
 function addToChatBox(msg){
     msgArea.innerHTML += msg + '<br />';
+    // So that the chatbox scrolls automatically on new message
     $('#receive').scrollTop($('#receive')[0].scrollHeight);
 }
 function sendMessage(type, msg, sender, isOrigin){
@@ -224,6 +231,14 @@ function joinRoom(){
     socket.emit('joinRoom', {"roomId": roomId, "nick": nick});
     isLeader = false;
     pc = newPeer();
+}
+window.onbeforeunload = function(e){
+    if(isLeader){
+        sendMessage('meta', nick+' has left', nick, false);
+    }else{
+        sendMessage('info', JSON.stringify({data: 'leave'}));
+        pc.close();
+    }
 }
 function setup(){
     if(window.location.hash == ""){
