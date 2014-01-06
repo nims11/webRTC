@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Multi Text Chat</title>
+<script src="../ext-js/adapter.js"></script>
+<script src="../ext-js/socket.io.js"></script>
+<script src="../ext-js/jquery-1.10.2.min.js"></script>
+<script type='text/javascript'>
+/*
+Todo:
+    left message is quite late
+    authorise
+    keepAlive
+    escape messages
+    handle connection close
+
+*/
+$(document).ready(function (){
+    $('#receive').on('scrollDown', function(){
+        console.log('Hi!');
+        $('#receive').scrollTop($('#receive')[0].scrollHeight);
+    });
+});
+</script>
+<link rel="stylesheet" href="multitxt.css">
+</head>
+<body>
+<div id='chatContainer'>
+    <div id='receive'></div>
+    <form name='sendForm' id='sendForm'>
+        <div id='textContainer'>
+            <input type='text' id='sendVal' />
+        </div>
+    </form>
+</div>
+<script type="text/javascript">
+var socket = io.connect('http://'+window.location.hostname+':8080');
+var msgArea = document.getElementById('receive');
+navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+var is_firefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
+
+var pc; // Used if the client isn't an initiator
+var peers = {}; //  Used to store clients connecting to the initator
+var isLeader;   // If the client is the initiator
+var roomId;
+var nick;
+function newPeer(sock, nick){
+    var pc = new RTCPeerConnection(pc_config, {optional: [{RtpDataChannels: true}]});
+    var pc_config = {"iceServers": [{"url": "stun:stun.l.google.com:19302"}]};
+    pc.isLeader = isLeader;
+    pc.socket = sock;   // Session id with the socket.io instance
+    pc.nick = nick;
+    var mediaConstraints = {/*'mandatory': {
+                'OfferToReceiveAudio':true, 
+                'OfferToReceiveVideo':true }*/};
+    pc.onicecandidate = function (evt) {
+        // pc.onicecandidate = null;
+        console.log('ice');
+        socket.emit('ice', { "candidate": evt.candidate, "roomId": roomId, "socket": pc.socket});
+    };
+    pc.answer = function (){
+        pc.createAnswer(gotDescription, function (event){}, mediaConstraints);
+    }
+    pc.offer = function (){
+        pc.createOffer(gotDescription, function (event){}, mediaConstraints);
+    }
+
+    function handleDisconnect(){
+        if(pc.iceConnectionState == 'disconnected'){
+            if(isLeader){
+                var disconnectedNick = pc.nick;
+                delete peers[pc.socket];
+                sendMessage('meta', disconnectedNick+' has left', nick, true);
+            }else{
+                addToChatBox(formatMeta('Lost connection...'));
+            }
+        }
+    }
+
+    if(isLeader) {  // Create a channel if initiator
+        pc.channel = pc.createDataChannel("sendDataChannel");
+        setupChannel(pc.channel);
+        pc.channel.onopen = function(){
+            sendMessage('meta', pc.nick+' has joined', nick, true);
+            pc.oniceconnectionstatechange = handleDisconnect;
+        }
+    } else{ // Else wait for a channel from the initiator
+        pc.ondatachannel = function(event) {
+            console.log('connected channel');
+            pc.channel = event.channel;
+            setupChannel(pc.channel);
+            pc.oniceconnectionstatechange = handleDisconnect;
+        };
+    }
+
+    function setupChannel(channel){
+        channel.onmessage = function(event){
+            console.log(event.data);
+            data = JSON.parse(event.data);
+            if(isLeader){
+                if(data.type == 'message'){
+                    sendMessage('message', data.content, pc.nick);
+                    addToChatBox(joinNickMsg(pc.nick, data.content));
+                }
+            }else{
+                if(data.type == 'message')
+                    addToChatBox(data.content);
+                else if(data.type == 'meta')
+                    addToChatBox(formatMeta(data.content));
+            }
+        };
+    }
+    function gotDescription (desc){
+        pc.setLocalDescription(desc);
+        socket.emit('sdp', { "sdp": desc , "roomId": roomId, "socket": pc.socket});
+    }
+    return pc;
+}
+function joinNickMsg(nick, msg){
+    return '<b>'+nick+':</b> '+msg;
+}
+function formatMeta(msg){
+    return '<i>'+msg+'</i>';
+}
+function addToChatBox(msg){
+    msgArea.innerHTML += msg + '<br />';
+    $('#receive').scrollTop($('#receive')[0].scrollHeight);
+}
+function sendMessage(type, msg, sender, isOrigin){
+    if(!isLeader){
+        try{
+            pc.channel.send(JSON.stringify({type: type, content: msg}));
+        }catch(e){
+            console.log(pc.nick + ' channel is broken!');
+        }
+    }
+    else{
+        var dataToPass = msg;
+        if(type == 'message')
+            dataToPass = joinNickMsg(sender, msg);
+        for(key in peers){
+            try{
+                peers[key].channel.send(JSON.stringify({type: type, content: dataToPass}));
+            }catch(e){
+                console.log(peers[key].nick + ' channel is broken!');
+            }
+        }
+    }
+    if(isLeader && isOrigin){
+        if(type == 'message')
+            addToChatBox(joinNickMsg(sender, msg));
+        else if(type == 'meta')
+            addToChatBox(formatMeta(msg));
+    }
+}
+socket.on('ice', function(signal) {
+    if(isLeader && (!signal.socket || !peers[signal.socket]))
+        return;
+    if(!isLeader && !pc)
+        pc = newPeer();
+    if(signal.candidate == null) {return;}
+
+    if(isLeader)
+        peers[signal.socket].addIceCandidate(new RTCIceCandidate(signal.candidate));
+    else
+        pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+});
+socket.on('sdp', function(signal) {
+    if(isLeader && (!signal.socket || !peers[signal.socket]))
+        return;
+    if(!isLeader && !pc)
+        pc = newPeer();
+
+    if(!isLeader)
+        pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+    else
+        peers[signal.socket].setRemoteDescription(new RTCSessionDescription(signal.sdp));
+    if(!isLeader)
+        pc.answer();
+});
+socket.on('newSlave', function(data) {
+    console.log('new slave');
+    peers[data.socket] = newPeer(data.socket, data.nick);
+    peers[data.socket].offer();
+    console.log(peers);
+});
+
+document.sendForm.onsubmit = function (){
+    var data = document.getElementById('sendVal').value;
+    sendMessage('message', data, nick, true);
+    document.getElementById('sendVal').value = '';
+    $("#receive").trigger('scrollDown');
+    return false;
+};
+function createRoom(){
+    roomId = "";
+    while(!roomId.length){
+        /*
+        Todo: handle roomId clash
+        */
+        roomId = Math.random().toString(36).substring(2, 7);
+    }
+    window.location.hash = roomId;
+    socket.emit('createRoom', {"roomId": roomId});
+    isLeader = true;
+    nick = "";
+    while(!nick.length){
+        /*
+        Todo: Handle nick clash
+        Also the initiator keeping all the nick db can pose a problem when implementing KeepAlive. Switch later to many to many maybe? Or let the signal server handle nicks?
+        */
+        nick = prompt('Enter your nick');
+    }
+}
+function joinRoom(){
+    roomId = window.location.hash.substring(1);
+    /*
+    Todo: handle invalid id
+    */
+    nick = "";
+    while(!nick.length){
+        nick = prompt('Enter your nick');
+    }
+    socket.emit('joinRoom', {"roomId": roomId, "nick": nick});
+    isLeader = false;
+    pc = newPeer();
+}
+function setup(){
+    if(window.location.hash == ""){
+        createRoom();
+        addToChatBox(formatMeta('Room Created, people can join this room by visiting the URL of this page'));
+    }else {
+        joinRoom();
+    }
+}
+setup();
+</script>
+</body>
+</html>

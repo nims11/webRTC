@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Video Chat</title>
+<script src="../ext-js/adapter.js"></script>
+<script src="../ext-js/socket.io.js"></script>
+</head>
+<body>
+<div id='receive'></div>
+<textarea id='sendVal'></textarea>
+<button id='send' >Send</button>
+<button id='call' onclick="start(true);">Call</button>
+<video id="localVideo" height="400" width="400" autoplay></video>
+<video id="remoteVideo" height="400" width="400" autoplay></video>
+<script type="text/javascript">
+var socket = io.connect('http://'+window.location.hostname+':8080');
+//var signalingChannel = createSignalingChannel();
+var pc;
+var configuration = {video: true};
+var remoteView = document.getElementById('remoteVideo');
+var selfView = document.getElementById('localVideo');
+var msgArea = document.getElementById('receive');
+navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+var pc_config = {"iceServers": [{"url": "stun:stun.l.google.com:19302"}]};
+var mediaConstraints = {'mandatory': {
+                'OfferToReceiveAudio':true, 
+                'OfferToReceiveVideo':true }};
+
+var receiveChannel, sendChannel;
+var mediaReq = {"audio": true, "video": true};
+var channel;
+// run start(true) to initiate a call
+function start(isCaller) {
+    pc = new RTCPeerConnection(pc_config, {optional: [{RtpDataChannels: true}]});
+
+    // send any ice candidates to the other peer
+    pc.onicecandidate = function (evt) {
+        socket.emit('ice', { "candidate": evt.candidate, "iscaller": isCaller });
+    };
+
+    // once remote stream arrives, show it in the remote video element
+    pc.onaddstream = function (evt) {
+        remoteView.src = URL.createObjectURL(evt.stream);
+    };
+
+    // get the local stream, show it in the local video element and send it
+    function errorGetUser(stream){
+        console.log('error stream');
+    }
+
+    if(isCaller) {
+        channel = pc.createDataChannel("sendDataChannel");
+        setupChannel(channel);
+    } else{
+        pc.ondatachannel = function(event) {
+            console.log('connected channel');
+            channel = event.channel;
+            setupChannel(channel);
+        };
+    }
+    function setupChannel(channel){
+        channel.onmessage = function(event){
+            console.log(event.data);
+            msgArea.innerHTML = event.data;
+        };
+    }
+    navigator.getUserMedia(mediaReq, function (stream) {
+        selfView.src = URL.createObjectURL(stream);
+        pc.addStream(stream);
+
+        if (isCaller)
+            pc.createOffer(gotDescription, function (event){}, mediaConstraints);
+        else
+            pc.createAnswer(gotDescription, function (event){}, mediaConstraints);
+
+        document.getElementById('send').onclick = function (){
+          var data = document.getElementById('sendVal').value;
+          console.log(data);
+          channel.send(data);
+        };
+       
+
+        function gotDescription(desc) {
+            pc.setLocalDescription(desc);
+            socket.emit('sdp', { "sdp": desc });
+        }
+    }, errorGetUser);
+}
+socket.on('ice', function(signal) {
+	if(!pc) start(false);
+	if(signal.candidate == null) {return;}
+	pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+});
+socket.on('sdp', function(signal) {
+	if(!pc)start(false);
+	pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+});
+// signalingChannel.onmessage = function (evt) {
+//     if (!pc)
+//         start(false);
+
+//     var signal = JSON.parse(evt.data);
+//     if (signal.sdp)
+//         pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+//     else
+//         pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+// };
+</script>
+</body>
+</html>
