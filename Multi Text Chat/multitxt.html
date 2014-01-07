@@ -12,7 +12,7 @@ Todo:
     keepAlive
     escape messages
     handle connection close
-
+    Encrypt
 */
 $(document).ready(function(){
     $('#newRoom').attr('href', window.location.pathname);
@@ -45,19 +45,18 @@ var pc; // Used if the client isn't an initiator
 var peers = {}; //  Used to store clients connecting to the initator
 var isLeader;   // If the client is the initiator
 var roomId;
-var nick;
-function newPeer(sock, nick){
+var nick;   // Nick of the current user
+function newPeer(sock, nick){   // Arguments applicable only for the leader
     var pc = new RTCPeerConnection(pc_config, {optional: [{RtpDataChannels: true}]});
     var pc_config = {"iceServers": [{"url": "stun:stun.l.google.com:19302"}]};
     pc.isLeader = isLeader;
-    pc.socket = sock;   // Session id with the socket.io instance
-    pc.nick = nick;
-    var mediaConstraints = {/*'mandatory': {
-                'OfferToReceiveAudio':true, 
-                'OfferToReceiveVideo':true }*/};
+    pc.socket = sock;   // Session id with the socket.io instance of the other peer
+    pc.nick = nick;     // nick of the other peer
+    var mediaConstraints = {};
     pc.onicecandidate = function (evt) {
-        // pc.onicecandidate = null;
         console.log('ice');
+        // pc.socket is sent so the socket.io server knows where the other non-leader peer is
+        // It is not required by the non peer as the socket id of leader is always stored in the socket.io server
         socket.emit('ice', { "candidate": evt.candidate, "roomId": roomId, "socket": pc.socket});
     };
     pc.answer = function (){
@@ -104,9 +103,8 @@ function newPeer(sock, nick){
                     sendMessage('message', data.content, pc.nick);
                     addToChatBox(joinNickMsg(pc.nick, data.content));
                 }else if(data.type == 'info'){
-                    if(JSON.parse(data.content).data == 'leave'){
+                    if(JSON.parse(data.content).data == 'leave')
                         pc.close();
-                    }
                 }
             }else{
                 if(data.type == 'message')
@@ -145,6 +143,7 @@ function sendMessage(type, msg, sender, isOrigin){
         var dataToPass = msg;
         if(type == 'message')
             dataToPass = joinNickMsg(sender, msg);
+        // Send to all the Slaves
         for(key in peers){
             try{
                 peers[key].channel.send(JSON.stringify({type: type, content: dataToPass}));
@@ -153,6 +152,7 @@ function sendMessage(type, msg, sender, isOrigin){
             }
         }
     }
+    // If it is originated from the leader, add to the chatbox
     if(isLeader && isOrigin){
         if(type == 'message')
             addToChatBox(joinNickMsg(sender, msg));
