@@ -18,10 +18,13 @@ node multitxt.js
 ```
 And open the multitxt.html in browser. (Via the HTTP server, not directly from the file manager)
 
+### File Sharing
+Transfer files using RTC Data Channels. File is transferred through chunking (Performance issues and Chrome limitations). The client requests for chunk and the serving peer responds with the actual chunk. Optimization related to chunk size and delay needed to be done. The serving peer uses a delay to process the queue of requests. Will try implementing with 3-way handshaking. Will write more on it later.
+
 ## Minor Improvements
 -   RTCDataChannel cross browser interop
 -   Analyzing many-to-many architecture for Multi Client Text Chat
 
 ## Further Projects
--   Using the multi client text chat concept, implement file sharing using webRTC. Since reliable data channels are still not everywhere, will need to implement some psuedo reliable mechanism. Possible issues may include chunking, determining bandwidth to avoid packet drops. Possible also include streaming for files like audio and video.
--   Integrate Video and Text Chat into multi chat with Video and Text. Possible issues may include architecture to use. One-to-Many may lead to more latency.
+-   Integrate Video and Text Chat into multi chat with Video and Text. Possible issues may include architecture to use. One-to-Many may lead to more latency as well as security issues.
+-   Distributed File Sharing Network. Something similar to BitTorrent.
