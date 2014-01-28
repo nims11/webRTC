@@ -1,0 +1,31 @@
+body {
+	background-color: #FF944D;
+}
+#chatContainer{
+	width: 60%;
+	margin-top: 100px;
+	margin-left: auto;
+	margin-right: auto;
+}
+#receive{
+	background-color: rgba(224, 224, 209, 0.3);
+	height: 400px;
+	overflow-y: scroll;
+}
+#textContainer{
+	width: 100%;
+}
+#sendVal{
+	width: 100%;
+	border: 0;
+}
+#footer{
+	width: 100%;
+	text-align: center;
+	margin-top: 20px;
+}
+#nav{
+	width: 100%;
+	text-align: center;
+	margin-bottom: 10px;
+}

@@ -55,7 +55,7 @@ function newPeer(sock, nick){   // Arguments applicable only for the leader
     var mediaConstraints = {};
     pc.onicecandidate = function (evt) {
         console.log('ice');
-        // pc.socket is sent so the socket.io server knows where the other non-leader peer is
+        // pc.socket is sent so the socket.io serverhtop knows where the other non-leader peer is
         // It is not required by the non peer as the socket id of leader is always stored in the socket.io server
         socket.emit('ice', { "candidate": evt.candidate, "roomId": roomId, "socket": pc.socket});
     };
