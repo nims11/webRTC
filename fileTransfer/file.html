@@ -1,27 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Multi Text Chat</title>
+<title>Share.vv</title>
 <script src="../ext-js/adapter.js"></script>
 <script src="../ext-js/socket.io.js"></script>
 <script src="../ext-js/jquery-1.10.2.min.js"></script>
+<script src="../bootstrap/js/bootstrap.min.js"></script>
 <script src="./file.js"></script>
 <script type='text/javascript'>
 // New file link
 </script>
+<link rel="stylesheet" href="../bootstrap/css/bootstrap.min.css">
 <link rel="stylesheet" href="file.css">
 </head>
 <body>
-<form name='uploadForm'>
-    <input type='file' name='uploadField' multiple/>
-</form>
-<button id='downloadBut'>Download</button>
-<ul id='fileList'>
-</ul>
+<div class="container">
+	<h1 class="text-right">Share.vv</h1>
+	<ul class="topnav text-right">
+		<li><a id="newRoom" target="new">New Room</a></li>
+		<li><a>FAQ</a></li>
+	</ul>
+	<div id="uploadArea">
+		<h3>Drag and Drop files here</h3>
+		<form name='uploadForm' id="uploadForm">
+		    <input type='file' name='uploadField' multiple/>
+		</form>
+	</div>
+	<div id="fileList">
+		
+	</div>
+</div>
+<div id="templates" style="display:none">
+	<div class="row fileClient">
+		<div class="col-md-5 fileName">Some-random file name Foo.txt</div>
+		<div class="col-md-1 fileSize">17.6M</div>
+		<div class="col-md-6">
+			<div>
+				<a><span class="glyphicon glyphicon-save"></span></a>
+				<!--<span class="glyphicon glyphicon-pause"></span>-->
+				<a><span class="glyphicon glyphicon-stop"></span></a>
+				<a download><span class="glyphicon glyphicon-floppy-save"></span></a>
+				<a><span class="glyphicon glyphicon-repeat"></span></a>
+			</div>
+			<div class="progress">
+				<div class="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%;">
+				</div>
+				<div class='progressText'></div>
+			</div>
+		</div>
+	</div>
+	<div class="row fileLeader">
+		<div class="col-md-5 fileName">Some-random file name Foo.txt</div>
+		<div class="col-md-1 fileSize">17.6M</div>
+		<div class="col-md-6">
+			<div>
+				<a href=""><span class="glyphicon glyphicon-remove"></span></a>
+			</div>
+		</div>
+	</div>
+</div>
 <script type="text/javascript">
+document.getElementById("newRoom").href = window.location.pathname;
 $(document).ready(setup);
 </script>
-<div id='downLinks' style='display:none'>
-</div>
 </body>
 </html>

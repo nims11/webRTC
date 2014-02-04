@@ -1,3 +1,16 @@
+/*
+    $fileLeader and $fileClient -   Template for filelist items for
+                                    Room Leader and Clients, respectively.
+*/
+var $uploadField, $fileList, $fileLeader, $fileClient;
+$(document).ready(function(){
+    $uploadField = $(document.uploadForm.uploadField);
+    $fileList = $('#fileList');
+    $fileLeader = $('#templates .fileLeader');
+    $fileClient = $('#templates .fileClient');
+});
+
+
 var socket = io.connect('http://'+window.location.hostname+':8080');
 navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
 var is_firefox = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
@@ -8,24 +21,26 @@ var isLeader;   // If the client is the initiator
 var roomId;
 var files = {}; // List of files. Complete in case of Room leader
 var fileIds = 0;
-var delay = 100, originalDelay = delay, diffDelay=10;   // Minimum delay between two responses.
-var minDelay = 10;
+/*
+    Need to thoroughly test delay and tries mechanism.
+*/
+var delay = 5, originalDelay = delay, diffDelay=10;   // Minimum delay between two responses.
+var minDelay = 5;
 var maxDelay = 1000;
-var tryLimit = 10;  // Max number of attempts before failing
+var tryLimit = 15;  // Max number of attempts before failing
 
-var intervalId;
-var time;
 
 // {fileId: ..., chunkId: ...}
 var reqQueue = [];
 // {fileId: ..., chunkId: ..., peerId}
 var responseQueue = [];
 
+/*
+    Delay Mechanism for increasing and decreasing delay
+*/
 function incDelay(){
-    if(delay + diffDelay <= maxDelay){
-        console.log("Increasing Delay");
-        delay += diffDelay;
-    }
+    console.log("Increasing Delay");
+    delay = Math.min(delay+diffDelay, maxDelay);
 }
 function decDelay(){
     if(delay - diffDelay >= minDelay){
@@ -81,15 +96,22 @@ function newPeer(sock){   // Arguments applicable only for the leader
     function setupChannel(channel){
         var x = 0;
         channel.onmessage = function(event){
-//            if(isLeader)
-            console.log(event.data.length);
-            // if(x < 5)
-            //     console.log(event.data);
-            // else{
-            //     reqQueue = [];
-            // }
-            // x++;
-            data = JSON.parse(event.data);
+            if(!isLeader)
+                console.log(event.data.length);
+            var endmarkerStr = '"endmarker":1}';
+            var endmarker = event.data.indexOf(endmarkerStr);
+            var data;
+            if(endmarker != -1){
+                var JSONData = event.data.substr(0, endmarkerStr.length+endmarker);
+                try{
+                    data = JSON.parse(JSONData);
+                    data.fileChunk = event.data.substr(JSONData.length);
+                }catch(e){
+                    data = JSON.parse(event.data);
+                }
+            }
+            else
+                data = JSON.parse(event.data);
             if(isLeader){
                 if(data.type == 'reqChunk')
                     handleRequest(data, pc);
@@ -107,19 +129,22 @@ function newPeer(sock){   // Arguments applicable only for the leader
     }
     pc.chunkSize = getChunkSize();
     function getChunkSize(){
-        // return 100;
-        return 20000;
+        return 5000;
     }
     return pc;
 }
+
 function getFunc(func, arg){
     return function(){
         func(arg);
     }
 }
+
 function noOfChunks(size, chunkSize){
     return Math.ceil(size/chunkSize);
 }
+
+// When the leader receives a request, add it to the response queue
 function handleRequest(request, pc){
     file = files[request.fileId];
     if(!file || 
@@ -128,6 +153,10 @@ function handleRequest(request, pc){
         )
         return false;
     responseQueue.push({fileId: request.fileId, chunkId: request.chunkId, peerId: pc.socket});
+
+    // Start processing the response queue if it was already empty
+    if(responseQueue.length == 1)
+        processResponseQueue();
 }
 function handleResponse(response){
     if(reqQueue.length == 0 || reqQueue[0].chunkId != response.chunkId || reqQueue[0].fileId != response.fileId)
@@ -139,12 +168,11 @@ function handleResponse(response){
         bufView[i] = response.fileChunk.charCodeAt(i);
     reqQueue.shift();
     file.completed++;
-    if(response.chunkId == file.totChunk-1){
-        clearInterval(intervalId), console.log(time);
-    }
-    processReqQueue(tryLimit);
+    processReqQueue();
 }
 function processReqQueue(tries){
+    if(typeof(tries)==='undefined')
+        tries = tryLimit;
     if(reqQueue.length == 0)
         return true;
     if(!tries){
@@ -164,6 +192,10 @@ function processReqQueue(tries){
     }
 }
 function processResponseQueue(tries){
+    if(typeof(tries)==='undefined')
+        tries = tryLimit;
+
+    // If the request is invalid due the peer no longer existing, remove it
     while(responseQueue.length > 0 && !peers[responseQueue[0].peerId])
         responseQueue.shift();
     if(responseQueue.length != 0){
@@ -177,12 +209,10 @@ function processResponseQueue(tries){
                 var chunkSize = pc.chunkSize;
                 var chunkId = res.chunkId;
                 var fileChunk = files[res.fileId].arraybuf.slice(chunkId*chunkSize, (chunkId+1)*chunkSize);
-                console.log("Chunk Length: "+fileChunk.byteLength);
-                fileChunkStr = String.fromCharCode.apply(null, new Uint8Array(fileChunk));
-                fileChunk = Array.apply(null, new Uint8Array(fileChunk));
+                var fileChunkStr = String.fromCharCode.apply(null, new Uint8Array(fileChunk));
 
-                var data = {type: 'responseChunk', fileId: res.fileId, chunkId: chunkId, fileChunk: fileChunkStr};
-                pc.channel.send(JSON.stringify(data));
+                var data = {type: 'responseChunk', fileId: res.fileId, chunkId: chunkId, endmarker:1};
+                pc.channel.send(JSON.stringify(data)+fileChunkStr);
                 responseQueue.shift();
                 decDelay();
             }catch(e){
@@ -195,41 +225,57 @@ function processResponseQueue(tries){
             }
         }
     }
-    setTimeout(getFunc(processResponseQueue, tryLimit), delay);
+    
+    // If response Queue is filled, schedule next response processing
+    if(responseQueue.length > 0)
+        setTimeout(getFunc(processResponseQueue, tryLimit), delay);
 }
 function updateProgress($target){
     var intervalId;
-    var file = files[$target.data('fileId')];
+    var fileId = $target.data('fileId');
+    var file = files[fileId];
+    var $progressBar = $target.find('.progress-bar');
+    var $progressText = $target.find('.progressText');
+    var startTime = new Date().getTime();
     function update(){
-        var progress = parseInt(file.completed/file.totChunk*1000)/10;
-        $target.text(progress.toString()+"%");
+        var progress = +(file.completed/file.totChunk*100).toFixed(1);
+        $progressBar.css('width', progress+'%');
+        $progressBar.attr('aria-valuenow', progress);
+        $progressText.text(progress+"%");
+
         if(file.completed == file.totChunk){
             clearInterval(intervalId);
+
+            // Will give really low value for small files due to the 500 ms offset at which it runs
+            // need to shift it to other function
+            var timeElapsed = (new Date().getTime() - startTime)/1000;
+            var bytesPerSec = file.file.size/timeElapsed;
+            $progressText.text('Completed in ' + (+timeElapsed.toFixed(1)) + 's ('+getSuitableSizeUnit(bytesPerSec)+'ps)');
+
+            $saveLink = $target.find('.glyphicon-floppy-save');
+            enableAction($saveLink);
+            disableAction($target.find('.glyphicon-stop'))
+            $saveLink = $saveLink.parent();
             var b = new Blob(file.arraybuf);
             var url = URL.createObjectURL(b);
-            $target.html('<a href="'+url+'" download="'+file.file.name+'"">Save as</a>');
+            $saveLink.attr('href', url);
+            $saveLink.attr('download', file.file.name);
+
         }
     }
-    intervalId = setInterval(update, 1000);
+    intervalId = setInterval(update, 500);
 }
 function startDownload(evt){
     console.log('Starting Download');
-    evt.stopPropagation();
-    evt.preventDefault();
-    $target = $(evt.target);
+    $target = $(evt.target).closest('.row');
     fileId = $target.data('fileId');
     var file = files[fileId];
     var chunks = file.totChunk;
-    for(var i = 0;i<chunks;i++){
+    for(var i = 0;i<chunks;i++)
         reqQueue.push({fileId: fileId, chunkId: i});
-    }
-    time = 0;
-    if(!intervalId)
-        intervalId = setInterval(function(){time++;}, 1000);
 
-    updateProgress($target.parent().children('span'));
+    updateProgress($target);
     processReqQueue(tryLimit);
-    return false;
 }
 
 socket.on('ice', function(signal) {
@@ -287,11 +333,6 @@ function joinRoom(){
     pc = newPeer();
 }
 
-var uploadField, $fileList;
-$(document).ready(function(){
-    uploadField = document.uploadForm.uploadField;
-    $fileList = $('#fileList');
-});
 function sendHighPriorityMsg(data, pc){
     var dataStr = JSON.stringify(data);
     if(!pc){
@@ -307,21 +348,61 @@ function sendFileInfoToNewUser(pc){
         sendHighPriorityMsg({type: 'newFile', fileId: id, name: f.name, size: f.size}, pc);
     }
 }
+function disableAction($target){
+    $target.removeClass('active');
+    $target.parent().off('click');
+    $target.parent().attr('href', null);
+}
+function enableAction($target, func){
+    $target.addClass('active');
+    $target.parent().on('click', func);
+    $target.parent().attr('href', '');
+}
 function addFileToList(data){
-    $newli = $('<li id='+'fileNo'+data.fileId+'>'+data.name+'('+data.size+')</li>');
-    $newa = $('<a href="#">Download</a>');
-    $newSpan = $('<span class="progress"></span>');
-    $newa.data('fileId', data.fileId);
-    $newSpan.data('fileId', data.fileId);
-    $newa.click(startDownload);
+    $newFileDiv = $fileClient.clone();
+    $newFileDiv.data('fileId', data.fileId);
+    $newFileDiv.children('.fileName').text(data.name);
+    $newFileDiv.children('.fileSize').text(getSuitableSizeUnit(data.size));
 
-    $(fileList).append($newli.append($newa).append($newSpan));
+    // Enable Download Button
+    $downBut = $newFileDiv.find('.glyphicon-save');
+    enableAction($downBut, function (evt){
+        evt.stopPropagation();
+        evt.preventDefault();
+
+        $target = $(evt.target).parent().parent();
+        disableAction($target.find('.glyphicon-save'));
+        enableAction($target.find('.glyphicon-stop'));
+
+        startDownload(evt);
+        return false;
+    });
+
+    $fileList.append($newFileDiv);
     delete data['type'];
     files[data.fileId] = {file: data, 
         arraybuf: new Array(noOfChunks(data.size, pc.chunkSize)), 
         totChunk: noOfChunks(data.size, pc.chunkSize),
         completed: 0
     };
+}
+function getSuitableSizeUnit(bytes){
+    if(bytes<1000){
+        return bytes+"B";
+    }
+    bytes /= 1000;
+    if(bytes<1000){
+        return (+bytes.toFixed(1))+"KB";
+    }
+    bytes /= 1000;
+    if(bytes<1000){
+        return (+bytes.toFixed(1))+"MB";
+    }
+    bytes /= 1000;
+    if(bytes<1000){
+        return (+bytes.toFixed(1))+"GB";
+    }
+    return "???B";
 }
 function addFiles(fs){
     for(var i = 0; i < fs.length; i++){
@@ -330,7 +411,14 @@ function addFiles(fs){
         reader.onload = (function(f){
             return function(e){
                 files[fileIds] = {file: f, arraybuf: e.target.result};
-                $(fileList).append('<li id='+'fileNo'+fileIds+'>'+f.name+'</li>');
+
+                $newFileDiv = $fileLeader.clone();
+                $newFileDiv.data('fileId', fileIds);
+                $newFileDiv.children('.fileName').text(f.name);
+                $newFileDiv.children('.fileSize').text(getSuitableSizeUnit(f.size));
+
+                $fileList.append($newFileDiv);
+
                 sendHighPriorityMsg({type: 'newFile', fileId: fileIds, name: f.name, size: f.size});
                 fileIds++;
             }
@@ -342,14 +430,13 @@ function setup(){
     if(window.location.hash == ""){
         isLeader = true;
         createRoom();
-        $(uploadField).on('change', function(){
-            console.log(uploadField.files);
-            var fs = uploadField.files;
+        $uploadField.on('change', function(){
+            var fs = $uploadField[0].files;
             addFiles(fs);
         });
         processResponseQueue(tryLimit);
     }else {
-        $(uploadField).hide();
+        $("#uploadArea").hide();
         joinRoom();
     }
 }
