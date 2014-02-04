@@ -1,4 +1,16 @@
 /*
+    Things to implement 
+                    - Stopping download
+                    - Removing a file from list
+                    - purging a file from memory
+                    - Redownload
+                    - Checksum
+
+                    - Separate file transfer JS and UI JS
+                    - Remove JQuery and Bootstrap. very bloat, not wow.
+*/
+
+/*
     $fileLeader and $fileClient -   Template for filelist items for
                                     Room Leader and Clients, respectively.
 */
@@ -20,10 +32,9 @@ var peers = {}; //  Used to store clients connecting to the initator
 var isLeader;   // If the client is the initiator
 var roomId;
 var files = {}; // List of files. Complete in case of Room leader
-var fileIds = 0;
-/*
-    Need to thoroughly test delay and tries mechanism.
-*/
+var fileIds = 0;    // Fileid count
+
+//Need to thoroughly test delay and tries mechanism.
 var delay = 5, originalDelay = delay, diffDelay=10;   // Minimum delay between two responses.
 var minDelay = 5;
 var maxDelay = 1000;
@@ -35,9 +46,7 @@ var reqQueue = [];
 // {fileId: ..., chunkId: ..., peerId}
 var responseQueue = [];
 
-/*
-    Delay Mechanism for increasing and decreasing delay
-*/
+//Delay Mechanism for increasing and decreasing delay
 function incDelay(){
     console.log("Increasing Delay");
     delay = Math.min(delay+diffDelay, maxDelay);
